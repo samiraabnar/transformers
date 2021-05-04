@@ -34,13 +34,13 @@ from ..trainer_pt_utils import (
 )
 from ..trainer_utils import PREFIX_CHECKPOINT_DIR
 from ..utils import logging
-from .training_args_sm import is_sagemaker_model_parallel_available
+from .training_args_sm import is_smdistributed_available
 
 
 logger = logging.get_logger(__name__)
 
 
-if is_sagemaker_model_parallel_available():
+if is_smdistributed_available():
     import smdistributed.modelparallel.torch as smp
 
     @smp.step()
@@ -84,7 +84,7 @@ class SageMakerTrainer(Trainer):
             "instead.",
             FutureWarning,
         )
-        self.is_model_parallel_enabled = is_sagemaker_model_parallel_available()
+        self.is_model_parallel_enabled = is_smdistributed_available() and args.mp_parameters != ""
         super().__init__(args=args, **kwargs)
 
     def is_world_process_zero(self) -> bool:

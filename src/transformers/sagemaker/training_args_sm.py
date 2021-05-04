@@ -13,62 +13,37 @@
 # limitations under the License.
 
 import importlib.util
-import json
-import os
-import warnings
 from dataclasses import dataclass, field
+import warnings
 
 import torch
 
-from transformers.file_utils import cached_property, is_sagemaker_dp_enabled
+from transformers.file_utils import cached_property, is_sagemaker_distributed_available
 from transformers.training_args import TrainingArguments
 from transformers.utils import logging
 
 
 logger = logging.get_logger(__name__)
 
-# TODO: should be moved to `file_utils` after refactoring of SageMakerTrainer
 
-
-def is_sagemaker_model_parallel_available():
-    # Get the sagemaker specific mp parameters from smp_options variable.
-    smp_options = os.getenv("SM_HP_MP_PARAMETERS", "{}")
-    try:
-        # Parse it and check the field "partitions" is included, it is required for model parallel.
-        smp_options = json.loads(smp_options)
-        if "partitions" not in smp_options:
-            return False
-    except json.JSONDecodeError:
-        return False
-
-    # Get the sagemaker specific framework parameters from mpi_options variable.
-    mpi_options = os.getenv("SM_FRAMEWORK_PARAMS", "{}")
-    try:
-        # Parse it and check the field "sagemaker_distributed_dataparallel_enabled".
-        mpi_options = json.loads(mpi_options)
-        if not mpi_options.get("sagemaker_mpi_enabled", False):
-            return False
-    except json.JSONDecodeError:
-        return False
-    # Lastly, check if the `smdistributed` module is present.
+def is_smdistributed_available():
     return importlib.util.find_spec("smdistributed") is not None
 
 
-if is_sagemaker_model_parallel_available():
+if is_smdistributed_available():
     import smdistributed.modelparallel.torch as smp
-
-    smp.init()
 
 
 @dataclass
 class SageMakerTrainingArguments(TrainingArguments):
     mp_parameters: str = field(
-        default="",
-        metadata={"help": "Used by the SageMaker launcher to send mp-specific args. Ignored in SageMakerTrainer"},
+        default="", metadata={"help": "Used by the SageMaker launcher to send mp-specific args."}
     )
 
     def __post_init__(self):
         super().__post_init__()
+        if is_smdistributed_available() and self.mp_parameters != "":
+            smp.init()
         warnings.warn(
             "`SageMakerTrainingArguments` is deprecated and will be removed in v5 of Transformers. You can use "
             "`TrainingArguments` instead.",
@@ -81,11 +56,11 @@ class SageMakerTrainingArguments(TrainingArguments):
         if self.no_cuda:
             device = torch.device("cpu")
             self._n_gpu = 0
-        elif is_sagemaker_model_parallel_available():
+        elif is_smdistributed_available() and self.mp_parameters != "":
             local_rank = smp.local_rank()
             device = torch.device("cuda", local_rank)
             self._n_gpu = 1
-        elif is_sagemaker_dp_enabled():
+        elif is_sagemaker_distributed_available():
             import smdistributed.dataparallel.torch.distributed as dist
 
             dist.init_process_group()
@@ -117,14 +92,14 @@ class SageMakerTrainingArguments(TrainingArguments):
 
     @property
     def world_size(self):
-        if is_sagemaker_model_parallel_available():
+        if is_smdistributed_available() and self.mp_parameters != "":
             return smp.dp_size()
 
         return super().world_size
 
     @property
     def place_model_on_device(self):
-        return not is_sagemaker_model_parallel_available()
+        return not (is_smdistributed_available() and self.mp_parameters != "")
 
     @property
     def _no_sync_in_gradient_accumulation(self):
