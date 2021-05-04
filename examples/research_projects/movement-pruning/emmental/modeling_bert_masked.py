@@ -184,8 +184,6 @@ class BertSelfOutput(nn.Module):
             mask_scale=config.mask_scale,
         )
         self.LayerNorm = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
-        
-        (config.hidden_size, eps=config.layer_norm_eps)
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
 
     def forward(self, hidden_states, input_tensor, threshold):
