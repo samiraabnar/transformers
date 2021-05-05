@@ -22,6 +22,7 @@ The pruned weight matrix is then multiplied against the inputs (and if necessary
 import math
 
 import numpy as np
+from . import tensor_utils
 import torch
 from torch import nn
 from torch.nn import functional as F
@@ -116,7 +117,11 @@ class MaskedLinear(nn.Linear):
         # Tile mask properly to have the same shape as self.weight
         block_size = np.asarray(self.weight.shape) // np.asarray(mask.shape)
         if max(block_size) > 1:
-            raise NotImplementedError('block_size > 1 is not supported yet.')
+            if max(block_size) > min(block_size):
+              raise NotImplementedError(
+                'Different block size for different dimensions is not supported yet.')
+            mask = tensor_utils.expand_tensor(mask, max(block_size))
+
         # Mask weights with computed mask
         weight_thresholded = mask * self.weight
 
