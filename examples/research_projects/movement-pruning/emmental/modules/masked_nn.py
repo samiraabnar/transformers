@@ -21,6 +21,7 @@ The pruned weight matrix is then multiplied against the inputs (and if necessary
 
 import math
 
+import numpy as np
 import torch
 from torch import nn
 from torch.nn import functional as F
@@ -43,6 +44,7 @@ class MaskedLinear(nn.Linear):
         mask_init: str = "constant",
         mask_scale: float = 0.0,
         pruning_method: str = "topK",
+        block_size: int = None,
     ):
         """
         Args:
@@ -64,15 +66,24 @@ class MaskedLinear(nn.Linear):
                 Method to compute the mask.
                 Choices: ["topK", "threshold", "sigmoied_threshold", "magnitude", "l0"]
                 Default: ``topK``
+            block_size (`int`)
+                Size of blocks for structured pruning.
+                Choices: Any positive interget that satisfies: size(weights) % block_size == 0
+                Default: ``None``
         """
         super(MaskedLinear, self).__init__(in_features=in_features, out_features=out_features, bias=bias)
         assert pruning_method in ["topK", "threshold", "sigmoied_threshold", "magnitude", "l0"]
-        self.pruning_method = pruning_method
+        self.block_size = block_size or 1
+        assert max(np.asarray(self.weight.size()) % self.block_size) == 0, (
+            'weight.size() is not divisible by block size.')
 
+        self.pruning_method = pruning_method
         if self.pruning_method in ["topK", "threshold", "sigmoied_threshold", "l0"]:
             self.mask_scale = mask_scale
             self.mask_init = mask_init
-            self.mask_scores = nn.Parameter(torch.Tensor(self.weight.size()))
+
+            mask_shape = np.asarray(self.weight.size()) // self.block_size
+            self.mask_scores = nn.Parameter(torch.Tensor(torch.Size(mask_shape)))
             self.init_mask()
 
     def init_mask(self):
@@ -101,7 +112,13 @@ class MaskedLinear(nn.Linear):
                 s = torch.sigmoid(self.mask_scores)
             s_bar = s * (r - l) + l
             mask = s_bar.clamp(min=0.0, max=1.0)
+
+        # Tile mask properly to have the same shape as self.weight
+        block_size = np.asarray(self.weight.shape) // np.asarray(mask.shape)
+        if max(block_size) > 1:
+            raise NotImplementedError('block_size > 1 is not supported yet.')
         # Mask weights with computed mask
         weight_thresholded = mask * self.weight
+
         # Compute output (linear layer) with masked weights
         return F.linear(input, weight_thresholded, self.bias)
