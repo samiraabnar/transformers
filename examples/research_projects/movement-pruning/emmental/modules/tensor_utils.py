@@ -53,3 +53,40 @@ def expand_tensor(input_tensor: torch.Tensor, expansion_rate: int):
       list(np.reshape(
           [(d, d + len(shape)) for d in range(num_dims)], (-1,)))
       ).reshape(new_shape)
+
+
+def blockify(input_tensor: torch.Tensor, block_size: int,
+             method='max_pool'):
+  """Blockify the input tensor.
+
+  e.g.:
+  [1, 2, 3, 4] --> [1.5, 1.5, 3.5, 3.5]
+
+  Args:
+    input_tensor (`torch.FloatTensor`)
+      Input tensor to be blockified.
+    block_size (`int`)
+      Determines the size of the blocks (in all dimensions).
+  Returns:
+    Blockified input tensor.
+  """
+  assert max(np.asarray(input_tensor.shape) % block_size) == 0
+
+  if method == 'max_pool':
+    if len(input_tensor.shape) == 1:
+      # We add None for batch dimension.
+      return expand_tensor(
+        torch.nn.MaxPool1d(block_size)(input_tensor[None, ...])[0],
+        block_size)
+    elif len(input_tensor.shape) == 2:
+      # We add None for batch dimension.
+      return expand_tensor(
+        torch.nn.MaxPool2d(block_size)(input_tensor[None, ...])[0],
+        block_size)
+    elif len(input_tensor.shape) == 3:
+      # We add None for batch dimension.
+      return expand_tensor(
+        torch.nn.MaxPool3d(block_size)(input_tensor[None, ...])[0],
+        block_size)
+
+  raise NotImplementedError
